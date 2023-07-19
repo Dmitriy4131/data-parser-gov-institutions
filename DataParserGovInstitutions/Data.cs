@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace DataParserGovInstitutions
 {
-    internal class Data
+    public class Data
     {
         public Content[] content { get; set; }
         public int totalElements { get; set; }
@@ -60,22 +60,22 @@ namespace DataParserGovInstitutions
 
     public class Indicatorsoffinancialcondition
     {
-        public float sumRealEstate { get; set; }
-        public float sumRealEstateResidual { get; set; }
-        public float sumValuableProperty { get; set; }
-        public float sumValuablePropertyResidual { get; set; }
-        public float sumBalanceNoFinancial { get; set; }
-        public float cash { get; set; }
-        public float accountsCash { get; set; }
+        public float? sumRealEstate { get; set; }
+        public float? sumRealEstateResidual { get; set; }
+        public float? sumValuableProperty { get; set; }
+        public float? sumValuablePropertyResidual { get; set; }
+        public float? sumBalanceNoFinancial { get; set; }
+        public float? cash { get; set; }
+        public float? accountsCash { get; set; }
         public float? depositCash { get; set; }
-        public float others { get; set; }
-        public float sumDepthIncome { get; set; }
-        public float sumDepthExpenses { get; set; }
-        public float sumFinancialActives { get; set; }
+        public float? others { get; set; }
+        public float? sumDepthIncome { get; set; }
+        public float? sumDepthExpenses { get; set; }
+        public float? sumFinancialActives { get; set; }
         public float? debentures { get; set; }
-        public float kredit { get; set; }
-        public float sumDelayedPayable { get; set; }
-        public float sumObligations { get; set; }
+        public float? kredit { get; set; }
+        public float? sumDelayedPayable { get; set; }
+        public float? sumObligations { get; set; }
     }
 
     public class Planpaymentindex

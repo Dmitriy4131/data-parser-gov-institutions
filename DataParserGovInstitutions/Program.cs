@@ -8,22 +8,19 @@ namespace DataParserGovInstitutions
 {
     internal class Program
     {
-        static void Main()
+        static async Task Main()
         {
             string lastUpdateFrom = "04.12.2019";
             string lastUpdateTo = "10.12.2019";
 
             DataDownloader downloader = new DataDownloader();
-            List<Data> allData = downloader.DownloadAllDataAndCreateZipArchive(lastUpdateFrom, lastUpdateTo);
+            List<Data> allData = await downloader.DownloadAllDataAndCreateZipArchive(lastUpdateFrom, lastUpdateTo);
 
             DataProcessor processor = new DataProcessor();
-            foreach (Data data in allData)
-            {
-                processor.InsertOrUpdateData(data, lastUpdateFrom, lastUpdateTo);
-            }
+            processor.InsertOrUpdateData(allData, lastUpdateFrom, lastUpdateTo);
 
             Console.WriteLine("Задание выполнено.");
-            Console.ReadLine();
+            Console.ReadKey();
         }
     }
 }

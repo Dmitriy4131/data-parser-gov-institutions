@@ -1,133 +1,100 @@
 ﻿using Newtonsoft.Json;
 using Npgsql;
-using RestSharp;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Net.Http;
+using System.Threading.Tasks;
 
 namespace DataParserGovInstitutions
 {
-    class DataDownloader
+    public class DataDownloader
     {
-        private readonly RestClient client;
+        private readonly HttpClient httpClient;
 
         public DataDownloader()
         {
-            client = new RestClient();
+            httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 YaBrowser/23.5.4.674 Yowser/2.5 Safari/537.36");
         }
 
-        public List<Data> DownloadAllDataAndCreateZipArchive(string lastUpdateFrom, string lastUpdateTo)
+        public async Task<List<Data>> DownloadAllDataAndCreateZipArchive(string lastUpdateFrom, string lastUpdateTo)
         {
             List<Data> allData = new List<Data>();
             int page = 0;
             int pageSize = 100;
 
-            string zipPath = "data.zip";
-            using (var zipArchive = ZipFile.Open(zipPath, ZipArchiveMode.Create))
-            {
-                CreateTable();
+            string zipPath = $"{lastUpdateFrom}-{lastUpdateTo}.zip";
 
-                if (CheckDataExists(lastUpdateFrom, lastUpdateTo))
+            if (File.Exists(zipPath))
+            {            
+                using (var zipArchive = ZipFile.Open(zipPath, ZipArchiveMode.Update))
                 {
-                    Console.WriteLine($"Данные для диапазона дат {lastUpdateFrom} - {lastUpdateTo} уже существуют в базе данных.");
-                    return allData;
-                }
+                    var entriesToDelete = new List<ZipArchiveEntry>();
 
-                while (true)
-                {
-                    string url = $"https://bus.gov.ru/public-rest/api/epbs/fap?lastUpdateFrom={lastUpdateFrom}&lastUpdateTo={lastUpdateTo}&page={page}&size={pageSize}";
-
-                    RestRequest request = new RestRequest(url, Method.Get);
-
-                    RestResponse response = client.Execute(request);
-
-                    if (response.StatusCode != System.Net.HttpStatusCode.OK)
+                    foreach (var entry in zipArchive.Entries)
                     {
-                        Console.WriteLine($"Ошибка при загрузке страницы {page}");
-                        break;
+                        entriesToDelete.Add(entry);
                     }
 
-                    string jsonData = response.Content;
+                    foreach (var entry in entriesToDelete)
+                    {
+                        entry.Delete();
+                    }
 
-                    string filePath = $"{page}.json";
-                    File.WriteAllText(filePath, jsonData);
-
-                    zipArchive.CreateEntryFromFile(filePath, Path.GetFileName(filePath));
-
-                    Console.WriteLine($"Файл {filePath} успешно создан и добавлен в zip-архив.");
-
-                    File.Delete(filePath);
-
-                    Console.WriteLine($"Файл {filePath} успешно удален.");
-
-                    Data responseData = JsonConvert.DeserializeObject<Data>(jsonData);
-                    allData.Add(responseData);
-
-                    if (responseData.content.Length < pageSize)
-                        break;
-
-                    page++;
+                    await ProcessingPageData(lastUpdateFrom, lastUpdateTo, page, pageSize, allData, zipArchive);
                 }
+                return allData;
             }
 
+            using (var zipArchive = ZipFile.Open(zipPath, ZipArchiveMode.Create))
+            {
+                await ProcessingPageData(lastUpdateFrom, lastUpdateTo, page, pageSize, allData, zipArchive);
+            }
             return allData;
         }
 
-        public bool CheckDataExists(string lastUpdateFrom, string lastUpdateTo)
+        public async Task ProcessingPageData(string lastUpdateFrom, string lastUpdateTo, int page, int pageSize, List<Data> allData, ZipArchive zipArchive)
         {
-            using (var connection = GetConnection())
+            string url = $"https://bus.gov.ru/public-rest/api/epbs/fap?lastUpdateFrom={lastUpdateFrom}&lastUpdateTo={lastUpdateTo}&page={page}&size={pageSize}";
+
+            try
             {
-                string checkQuery = "SELECT COUNT(*) FROM test WHERE last_update_from = @lastUpdateFrom AND last_update_to = @lastUpdateTo";
+                var httpResponse = await httpClient.GetAsync(url);
 
-                using (var command = new NpgsqlCommand(checkQuery, connection))
+                if (httpResponse.IsSuccessStatusCode)
                 {
-                    DateTime fromDate = DateTime.Parse(lastUpdateFrom);
-                    DateTime toDate = DateTime.Parse(lastUpdateTo);
+                    var responseContent = await httpResponse.Content.ReadAsStringAsync();
+                    Data responseData = JsonConvert.DeserializeObject<Data>(responseContent);
+                    allData.Add(responseData);
 
-                    command.Parameters.AddWithValue("@lastUpdateFrom", fromDate);
-                    command.Parameters.AddWithValue("@lastUpdateTo", toDate);
+                    string jsonData = JsonConvert.SerializeObject(responseData);
+                    string filePath = $"{page}.json";
 
-                    int count = Convert.ToInt32(command.ExecuteScalar());
+                    using (var entryStream = zipArchive.CreateEntry(filePath).Open())
+                    using (var writer = new StreamWriter(entryStream))
+                    {
+                        await writer.WriteAsync(jsonData);
+                    }
 
-                    return count > 0;
+                    Console.WriteLine($"Файл {filePath} успешно создан и добавлен в zip-архив.");
+
+                    if (responseData.content.Length < pageSize)
+                        return;
+
+                    page++;
+                    await ProcessingPageData(lastUpdateFrom, lastUpdateTo, page, pageSize, allData, zipArchive);
+                }
+                else
+                {
+                    Console.WriteLine($"Ошибка получения данных со страницы {page}. HTTP-код ответа: {(int)httpResponse.StatusCode} {httpResponse.ReasonPhrase}");
                 }
             }
-        }
-
-        public NpgsqlConnection GetConnection()
-        {
-            string connectionString = "Host=127.0.0.1;Port=5432;Database=institutions;Username=postgres;Password=root";
-            var connection = new NpgsqlConnection(connectionString);
-            connection.Open();
-            return connection;
-        }
-
-        public void CreateTable()
-        {
-            using (var connection = GetConnection())
+            catch (HttpRequestException ex)
             {
-                string createTableQuery = "CREATE TABLE IF NOT EXISTS test (" +
-                "id SERIAL PRIMARY KEY," +
-                "content json," +
-                "total_pages bigint," +
-                "last boolean," +
-                "total_elements_integer bigint," +
-                "total_elements bigint," +
-                "first boolean," +
-                "number_of_elements bigint," +
-                "size bigint," +
-                "number bigint," +
-                "sort text NULL," +
-                "last_update_from date," +
-                "last_update_to date)";
-
-                using (var command = new NpgsqlCommand(createTableQuery, connection))
-                {
-                    command.ExecuteNonQuery();
-                }
+                Console.WriteLine($"Ошибка получения данных со страницы {page} и {ex.Message}");
             }
-            Console.WriteLine("Таблица успешно создана");
         }
     }
 }
