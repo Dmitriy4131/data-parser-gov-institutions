@@ -2,6 +2,7 @@
 using Npgsql;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace DataParserGovInstitutions
@@ -24,17 +25,16 @@ namespace DataParserGovInstitutions
             {
                 if (CheckDataExists(connection, fromDate, toDate))
                 {
-                    UpdateData(allData, connection, fromDate, toDate);
+                    DeleteData(connection, fromDate, toDate);
                 }
-                else
-                {
-                    InsertData(allData, connection, fromDate, toDate);
-                }
+
+                InsertData(allData, connection, fromDate, toDate);
             }
         }
 
         public void CreateTable()
         {
+            Data data = new Data();
             string tableName = "test";
 
             using (var connection = GetConnection())
@@ -74,6 +74,16 @@ namespace DataParserGovInstitutions
 
             Console.WriteLine($"Таблица {tableName} успешно создана");
         }
+
+
+
+
+
+
+
+
+
+
 
         public bool CheckDataExists(NpgsqlConnection connection, DateTime lastUpdateFrom, DateTime lastUpdateTo)
         {
@@ -158,70 +168,35 @@ namespace DataParserGovInstitutions
             }
         }
 
-        public void UpdateData(List<Data> allData, NpgsqlConnection connection, DateTime fromDate, DateTime toDate)
+        public void DeleteData(NpgsqlConnection connection, DateTime fromDate, DateTime toDate)
         {
             try
             {
-                foreach (var data in allData)
+                StringBuilder deleteQuery = new StringBuilder();
+
+                deleteQuery.AppendLine("DELETE FROM test");
+                deleteQuery.AppendLine("WHERE last_update_from >= @fromDate AND last_update_to <= @toDate");
+
+                using (var command = new NpgsqlCommand(deleteQuery.ToString(), connection))
                 {
-                    StringBuilder updateQuery = new StringBuilder();
+                    command.Parameters.AddWithValue("@fromDate", fromDate);
+                    command.Parameters.AddWithValue("@toDate", toDate);
 
-                    updateQuery.AppendLine("UPDATE test SET");
-                    updateQuery.AppendLine("content = @content,");
-                    updateQuery.AppendLine("total_pages = @totalPages,");
-                    updateQuery.AppendLine("last = @last,");
-                    updateQuery.AppendLine("total_elements_integer = @totalElementsInteger,");
-                    updateQuery.AppendLine("total_elements = @totalElements,");
-                    updateQuery.AppendLine("first = @first,");
-                    updateQuery.AppendLine("number_of_elements = @numberOfElements,");
-                    updateQuery.AppendLine("size = @size,");
-                    updateQuery.AppendLine("number = @number,");
-                    updateQuery.AppendLine("sort = @sort");
-                    updateQuery.AppendLine("WHERE last_update_from = @fromDate AND last_update_to = @toDate");
+                    int rowsAffected = command.ExecuteNonQuery();
 
-                    using (var command = new NpgsqlCommand(updateQuery.ToString(), connection))
+                    if (rowsAffected > 0)
                     {
-                        command.Parameters.AddWithValue("@content", NpgsqlTypes.NpgsqlDbType.Jsonb, JsonConvert.SerializeObject(data.content));
-                        command.Parameters.AddWithValue("@totalPages", data.totalPages);
-                        command.Parameters.AddWithValue("@last", data.last);
-                        command.Parameters.AddWithValue("@totalElementsInteger", data.totalElementsInteger);
-                        command.Parameters.AddWithValue("@totalElements", data.totalElements);
-                        command.Parameters.AddWithValue("@first", data.first);
-                        command.Parameters.AddWithValue("@numberOfElements", data.numberOfElements);
-                        command.Parameters.AddWithValue("@size", data.size);
-                        command.Parameters.AddWithValue("@number", data.number);
-                        if (data.sort != null)
-                        {
-                            command.Parameters.AddWithValue($"@sort", data.sort);
-                        }
-                        else
-                        {
-                            command.Parameters.AddWithValue($"@sort", DBNull.Value);
-                        }
-
-                        command.Parameters.AddWithValue("@fromDate", fromDate);
-                        command.Parameters.AddWithValue("@toDate", toDate);
-
-                        int rowsAffected = command.ExecuteNonQuery();
-
-                        if (rowsAffected > 0)
-                        {
-                            Console.WriteLine($"Данные для диапазона дат {fromDate} - {toDate}  успешно обновлены в базе данных.");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"Ошибка при обновлении данных для диапазона дат {fromDate} - {toDate}.");
-                        }
+                        Console.WriteLine($"Данные для диапазона дат {fromDate} - {toDate} успешно удалены из базы данных.");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Нет данных для удаления в диапазоне дат {fromDate} - {toDate}.");
                     }
                 }
             }
             catch (Npgsql.PostgresException ex)
             {
-                    Console.WriteLine($"Ошибка при выполнении SQL-запроса: {ex.Message}");
-            }
-            finally
-            {
-                connection.Close();
+                Console.WriteLine($"Ошибка при выполнении удаления данных: {ex.Message}");
             }
         }
     }
